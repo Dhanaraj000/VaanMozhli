@@ -1,83 +1,151 @@
-import React, { useState } from 'react';
-import { AlertTriangle, Map as MapIcon, Shield, Activity, Droplets } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+// We use simple HTML elements for Web Dashboard
+// If this file gives errors about View/Text, tell me immediately!
+
+import { AlertTriangle, Map as MapIcon, Activity, Droplets, MapPin, Search } from 'lucide-react';
 
 const VaanMozhliUI = () => {
-  const [prediction, setPrediction] = useState({ risk: "High", chance: "87%", area: "Adyar, Chennai" });
+  const [prediction, setPrediction] = useState({ 
+    risk: "Analyzing...", 
+    chance: "0%", 
+    area: "Waiting for Location..." 
+  });
+  const [loading, setLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+
+  // --- FETCH LOGIC ---
+  const fetchPrediction = async (lat?: number, lon?: number, city?: string) => {
+    setLoading(true);
+    try {
+      // NOTE: If running on phone, use your Laptop IP (e.g., http://192.168.1.5:5000)
+      // If running on Laptop Browser, localhost is fine.
+      let url = 'http://127.0.0.1:5000/api/v1/forecast';
+      
+      const params = new URLSearchParams();
+      if (lat && lon) {
+        params.append('lat', lat.toString());
+        params.append('lon', lon.toString());
+      } else if (city) {
+        params.append('city', city);
+      }
+      if (params.toString()) url += `?${params.toString()}`;
+
+      const response = await fetch(url, {
+        headers: { 'X-Client-Key': 'VAANMOZHI_CLIENT_2025' }
+      });
+      const data = await response.json();
+      
+      setPrediction({
+        risk: data.alertLevel || "Unknown",
+        chance: data.additionalInfo ? `${data.additionalInfo.dataConfidence}%` : "0%",
+        area: data.affectedDistricts ? data.affectedDistricts[0] : city || "Unknown Area"
+      });
+    } catch (err) {
+      console.error("Backend Error:", err);
+      alert("Cannot connect to Backend. Is python app.py running?");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- LOCATION LOGIC ---
+  const handleLiveLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    
+    // Request Location immediately
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        fetchPrediction(position.coords.latitude, position.coords.longitude);
+      },
+      (error) => {
+        console.error("Location blocked:", error);
+        alert("Location access denied. Please allow location in browser settings.");
+      }
+    );
+  };
+
+  // Auto-run on start
+  useEffect(() => {
+    // Try to get location automatically, if fails, load Chennai
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => fetchPrediction(pos.coords.latitude, pos.coords.longitude),
+            () => fetchPrediction(undefined, undefined, "Chennai")
+        );
+    } else {
+        fetchPrediction(undefined, undefined, "Chennai");
+    }
+  }, []);
 
   return (
-    <div className="flex h-screen bg-slate-900 text-white font-sans">
-      {/* Sidebar */}
-      <div className="w-80 bg-slate-800 border-r border-slate-700 p-6 flex flex-col">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <Droplets size={24} />
+    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif' }}>
+      
+      {/* SIDEBAR */}
+      <div style={{ width: '320px', backgroundColor: '#1e293b', padding: '24px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #334155' }}>
+        
+        {/* HEADER */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px' }}>
+          <div style={{ backgroundColor: '#2563eb', padding: '8px', borderRadius: '8px' }}>
+            <Droplets size={24} color="white" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">VaanMozhli</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>VaanMozhli</h1>
         </div>
 
-        <div className="space-y-6 flex-1">
-          {/* Model Status Card */}
-          <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-400 uppercase">ML Model Status</span>
-              <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
+        {/* SEARCH & GPS */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ position: 'relative' }}>
+                <input 
+                    type="text" 
+                    placeholder="Search District..." 
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && fetchPrediction(undefined, undefined, searchInput)}
+                    style={{ width: '100%', padding: '12px 12px 12px 40px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', color: 'white' }}
+                />
+                <div style={{ position: 'absolute', left: '12px', top: '12px' }}><Search size={16} color="#64748b"/></div>
             </div>
-            <p className="text-sm font-medium">Random Forest Classifier</p>
-            <div className="mt-2 h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 w-[70%]"></div>
-            </div>
-          </div>
 
-          {/* Current Prediction */}
-          <div>
-            <h3 className="text-xs font-semibold text-slate-400 uppercase mb-3">Active Alerts</h3>
-            <div className={`p-4 rounded-xl border-l-4 ${prediction.risk === 'High' ? 'bg-red-500/10 border-red-500' : 'bg-green-500/10 border-green-500'}`}>
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="text-red-500" size={20} />
+            <button 
+                onClick={handleLiveLocation}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', backgroundColor: '#334155', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+                <MapPin size={16} /> {loading ? "Locating..." : "Use Live Location"}
+            </button>
+        </div>
+
+        <hr style={{ borderColor: '#334155', margin: '24px 0' }} />
+
+        {/* ALERT CARD */}
+        <div style={{ 
+            padding: '16px', 
+            borderRadius: '12px', 
+            borderLeft: `4px solid ${prediction.risk === 'Severe' ? '#ef4444' : '#22c55e'}`,
+            backgroundColor: prediction.risk === 'Severe' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)'
+        }}>
+            <div style={{ display: 'flex', gap: '12px' }}>
+                <AlertTriangle color={prediction.risk === 'Severe' ? '#ef4444' : '#22c55e'} size={24} />
                 <div>
-                  <p className="font-bold text-sm">{prediction.risk} Risk Detected</p>
-                  <p className="text-xs text-slate-300 mt-1">{prediction.area}</p>
-                  <p className="text-xs font-bold mt-2 text-red-400">{prediction.chance} Confidence</p>
+                    <p style={{ margin: 0, fontWeight: 'bold' }}>{prediction.risk} Risk</p>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#cbd5e1' }}>{prediction.area}</p>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '12px', fontWeight: 'bold', color: '#60a5fa' }}>{prediction.chance} Confidence</p>
                 </div>
-              </div>
             </div>
-          </div>
         </div>
 
-        <button className="bg-blue-600 hover:bg-blue-700 py-3 rounded-xl font-bold transition-all">
-          Trigger SOS Alert
-        </button>
       </div>
 
-      {/* Main Content (Map Area) */}
-      <div className="flex-1 relative bg-slate-950">
-        {/* Top Stats Bar */}
-        <div className="absolute top-6 left-6 right-6 flex gap-4 z-10">
-          <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700 flex items-center gap-4 flex-1">
-            <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400"><Activity size={20}/></div>
-            <div>
-              <p className="text-xs text-slate-400">Current Rainfall</p>
-              <p className="text-lg font-bold">12.4 mm/hr</p>
-            </div>
-          </div>
-          <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700 flex items-center gap-4 flex-1">
-            <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400"><Shield size={20}/></div>
-            <div>
-              <p className="text-xs text-slate-400">Safe Zones Nearby</p>
-              <p className="text-lg font-bold">4 Locations</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Map Placeholder - In your real project, replace with <MapContainer> */}
-        <div className="w-full h-full flex items-center justify-center bg-[url('https://api.mapbox.com/styles/v1/mapbox/dark-v10/static/80.27,13.08,12,0/1200x800?access_token=YOUR_TOKEN')] bg-cover opacity-60">
-           <div className="text-center bg-slate-900/80 p-6 rounded-2xl border border-slate-700 border-dashed">
-             <MapIcon size={48} className="mx-auto mb-4 text-slate-500" />
-             <p className="text-slate-400">Interactive ML Map Layer Active</p>
-             <p className="text-xs text-slate-500 mt-1">Overlaying Elevation (DEM) + Real-time Rainfall</p>
-           </div>
+      {/* MAP AREA */}
+      <div style={{ flex: 1, position: 'relative', backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', padding: '32px', backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: '16px', border: '1px dashed #334155' }}>
+            <MapIcon size={48} color="#64748b" style={{ margin: '0 auto 16px auto', display: 'block' }} />
+            <p style={{ margin: 0, color: '#94a3b8', fontWeight: 'bold' }}>Live ML Inference Active</p>
+            <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#64748b' }}>Processing weather features for {prediction.area}...</p>
         </div>
       </div>
+
     </div>
   );
 };

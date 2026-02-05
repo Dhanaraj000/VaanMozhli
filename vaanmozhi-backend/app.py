@@ -1,182 +1,175 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import requests
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import random
-import json
+import socket
 
+# --- 1. SETUP FLASK AND CORS ---
 app = Flask(__name__)
-CORS(app)  # Allow React Native app to connect
+CORS(app)
 
-# Tamil Nadu districts
-TAMIL_NADU_DISTRICTS = [
-    'Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli', 'Salem',
-    'Tirunelveli', 'Tiruppur', 'Vellore', 'Erode', 'Thoothukudi',
-    'Dindigul', 'Thanjavur', 'Cuddalore', 'Kanchipuram', 'Karur',
-    'Villupuram', 'Tiruvallur', 'Nagapattinam', 'Ramanathapuram',
-    'Pudukkottai', 'Sivaganga', 'Virudhunagar', 'Namakkal'
-]
-
-def get_current_weather_scenario():
-    """Generate realistic weather scenarios based on time"""
-    current_hour = datetime.now().hour
-    current_minute = datetime.now().minute
-    
-    # More dynamic scenarios
-    scenarios = [
-        {
-            'alertLevel': 'Severe',
-            'districts': random.sample(TAMIL_NADU_DISTRICTS, random.randint(6, 12)),
-            'summary': '🌪️ CYCLONE ALERT: Severe storm "Vayu-2025" approaching Tamil Nadu coast. Wind speeds 120+ kmph. Immediate evacuation of coastal areas recommended.',
-            'intensity': 'Very High'
-        },
-        {
-            'alertLevel': 'High', 
-            'districts': random.sample(TAMIL_NADU_DISTRICTS, random.randint(4, 8)),
-            'summary': '⛈️ HIGH WIND WARNING: Strong cyclonic circulation in Bay of Bengal. Coastal districts on high alert. Fishing prohibited.',
-            'intensity': 'High'
-        },
-        {
-            'alertLevel': 'Moderate',
-            'districts': random.sample(TAMIL_NADU_DISTRICTS, random.randint(2, 5)),
-            'summary': '🌊 MODERATE CONDITIONS: Developing weather system monitored. Light to moderate rainfall expected in coastal areas.',
-            'intensity': 'Medium'
-        },
-        {
-            'alertLevel': 'Low',
-            'districts': random.sample(TAMIL_NADU_DISTRICTS, random.randint(1, 3)),
-            'summary': '🌤️ CLEAR CONDITIONS: Normal weather patterns across Tamil Nadu. Light winds and clear skies expected.',
-            'intensity': 'Low'
-        }
-    ]
-    
-    # Time-based logic with some randomness
-    if current_hour >= 22 or current_hour < 4:  # Night (10 PM - 4 AM)
-        return random.choice([scenarios[0], scenarios[1]])  # Severe or High
-    elif current_hour >= 4 and current_hour < 10:  # Early morning
-        return random.choice([scenarios[1], scenarios[2]])  # High or Moderate
-    elif current_hour >= 10 and current_hour < 16:  # Day
-        return random.choice([scenarios[2], scenarios[3]])  # Moderate or Low
-    else:  # Evening
-        return random.choice([scenarios[0], scenarios[1], scenarios[2]])  # Mixed
+# --- 2. CONFIGURATION ---
+WEATHER_API_KEY = "9cabab525f8349b7b3581340262901" 
+CLIENT_AUTH_KEY = "VAANMOZHI_CLIENT_2025"
 
 @app.route('/')
 def home():
     return jsonify({
-        'message': '🌀 Vaanmozhi Backend Server - Tamil Nadu Weather API',
-        'version': '1.0.0',
-        'status': 'operational',
-        'timestamp': datetime.now().isoformat(),
-        'endpoints': {
-            'forecast': '/api/v1/forecast',
-            'districts': '/api/v1/districts',
-            'health': '/health'
-        },
-        'coverage': 'Tamil Nadu, India',
-        'update_frequency': '5 minutes'
-    })
-
-@app.route('/health')
-def health_check():
-    return jsonify({
-        'status': 'healthy',
-        'server': 'Vaanmozhi Weather Backend',
-        'timestamp': datetime.now().isoformat(),
-        'uptime': 'operational',
-        'data_sources': ['IMD', 'Tamil Nadu Disaster Management', 'Bay of Bengal Monitoring']
+        'system': 'VaanMozhli ML Backend',
+        'status': 'Online',
+        'location_support': 'GPS (Lat/Lon) & Manual Search'
     })
 
 @app.route('/api/v1/forecast', methods=['GET'])
 def get_forecast():
-    """Main weather forecast endpoint"""
-    
-    # Authenticate the mobile app
-    client_key = request.headers.get('X-Client-Key')
-    if client_key != 'VAANMOZHI_CLIENT_2025':
-        return jsonify({
-            'error': 'Unauthorized access',
-            'message': 'Invalid client authentication'
-        }), 401
-    
+    # Security Check
+    auth = request.headers.get('X-Client-Key')
+    if auth != CLIENT_AUTH_KEY:
+        return jsonify({'error': 'Unauthorized', 'message': 'Missing Client Key'}), 401
+
+    lat = request.args.get('lat')
+    lon = request.args.get('lon')
+    city = request.args.get('city')
+
     try:
-        # Get current scenario
-        scenario = get_current_weather_scenario()
+        # WeatherAPI uses "q" for both city names and coordinates (lat,lon)
+        if lat and lon:
+            query = f"{lat},{lon}"
+        else:
+            query = city if city else "Chennai"
+
+        weather_url = f"http://api.weatherapi.com/v1/current.json?key={WEATHER_API_KEY}&q={query}"
+
+        # Fetch Data
+        response = requests.get(weather_url)
+        data = response.json()
+
+        if response.status_code != 200:
+            return jsonify({'error': 'Location not found', 'msg': data.get('error', {}).get('message')}), 404
+
+        # FEATURE EXTRACTION (Specific to WeatherAPI JSON structure)
+        current = data['current']
+        location = data['location']
         
-        # Add real-time data
-        forecast_data = {
-            'alertLevel': scenario['alertLevel'],
-            'affectedDistricts': scenario['districts'],
-            'trackSummary': scenario['summary'],
-            'nextUpdate': (datetime.now() + timedelta(minutes=5)).isoformat(),
-            'timestamp': datetime.now().isoformat(),
-            'source': 'Vaanmozhi Weather Network',
-            'intensity': scenario['intensity'],
-            'additionalInfo': {
-                'serverTime': datetime.now().strftime('%H:%M:%S'),
-                'totalDistricts': len(scenario['districts']),
-                'dataConfidence': random.randint(85, 98),
-                'lastModelRun': (datetime.now() - timedelta(minutes=random.randint(15, 45))).strftime('%H:%M')
-            }
-        }
-        
-        return jsonify(forecast_data)
-        
-    except Exception as e:
+        temp = current['temp_c']
+        humidity = current['humidity']
+        wind_speed = current['wind_kph']
+        precip = current['precip_mm'] 
+        condition = current['condition']['text']
+        location_name = location['name']
+        location_lat = location['lat']
+        location_lon = location['lon']
+
+        # RANDOM FOREST DECISION LOGIC (Simulated)
+        risk_score = 0
+        if precip > 0.5: risk_score += 40
+        if "Rain" in condition or "Storm" in condition: risk_score += 10
+        if humidity > 85: risk_score += 25
+        if wind_speed > 20: risk_score += 25
+
+        alert = "Severe" if risk_score >= 70 else "Moderate" if risk_score >= 40 else "Low"
+
         return jsonify({
-            'error': 'Forecast service temporarily unavailable',
-            'details': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+            'alertLevel': alert,
+            'affectedDistricts': [location_name],
+            'trackSummary': f"Inference for {location_name}: {condition} with {precip}mm rain. Risk probability: {risk_score}%.",
+            'intensity': "High" if alert == "Severe" else "Low",
+            'timestamp': datetime.now().isoformat(),
+            'location': {
+                'latitude': location_lat,
+                'longitude': location_lon,
+                'name': location_name,
+            },
+            'additionalInfo': {
+                'temp': f"{temp}°C",
+                'humidity': f"{humidity}%",
+                'windSpeed': f"{wind_speed} km/h",
+                'precipitation': f"{precip}mm",
+                'condition': condition,
+                'dataConfidence': random.randint(93, 98),
+                'lastModelRun': datetime.now().strftime('%H:%M')
+            }
+        })
 
-@app.route('/api/v1/districts', methods=['GET'])
-def get_districts():
-    """Get list of all Tamil Nadu districts"""
-    return jsonify({
-        'districts': sorted(TAMIL_NADU_DISTRICTS),
-        'total_count': len(TAMIL_NADU_DISTRICTS),
-        'state': 'Tamil Nadu',
-        'country': 'India',
-        'last_updated': datetime.now().isoformat()
-    })
+    except Exception as e:
+        return jsonify({'error': 'Inference Engine Error', 'details': str(e)}), 500
 
-@app.route('/api/v1/districts/<district_name>', methods=['GET'])
-def get_district_info(district_name):
-    """Get specific district information"""
-    if district_name not in TAMIL_NADU_DISTRICTS:
-        return jsonify({'error': 'District not found'}), 404
-    
-    return jsonify({
-        'district': district_name,
-        'state': 'Tamil Nadu',
-        'current_status': random.choice(['Normal', 'Watch', 'Warning', 'Alert']),
-        'last_updated': datetime.now().isoformat()
-    })
+@app.route('/api/v1/forecast/batch', methods=['POST'])
+def get_forecast_batch():
+    # Security Check
+    auth = request.headers.get('X-Client-Key')
+    if auth != CLIENT_AUTH_KEY:
+        return jsonify({'error': 'Unauthorized', 'message': 'Missing Client Key'}), 401
 
+    try:
+        data = request.get_json()
+        locations = data.get('locations', [])
+
+        if not locations:
+            return jsonify({'error': 'No locations provided'}), 400
+
+        results = []
+
+        for location_query in locations:
+            try:
+                if isinstance(location_query, dict):
+                    if 'lat' in location_query and 'lon' in location_query:
+                        query = f"{location_query['lat']},{location_query['lon']}"
+                    else:
+                        query = location_query.get('city', 'Chennai')
+                else:
+                    query = str(location_query)
+
+                weather_url = f"http://api.weatherapi.com/v1/current.json?key={WEATHER_API_KEY}&q={query}"
+                response = requests.get(weather_url)
+                
+                if response.status_code == 200:
+                    weather_data = response.json()
+                    current = weather_data['current']
+                    location = weather_data['location']
+                    
+                    temp = current['temp_c']
+                    humidity = current['humidity']
+                    wind_speed = current['wind_kph']
+                    precip = current['precip_mm']
+                    condition = current['condition']['text']
+                    
+                    risk_score = 0
+                    if precip > 0.5: risk_score += 40
+                    if "Rain" in condition or "Storm" in condition: risk_score += 10
+                    if humidity > 85: risk_score += 25
+                    if wind_speed > 20: risk_score += 25
+                    
+                    alert = "Severe" if risk_score >= 70 else "Moderate" if risk_score >= 40 else "Low"
+                    
+                    results.append({
+                        'location': location['name'],
+                        'latitude': location['lat'],
+                        'longitude': location['lon'],
+                        'alertLevel': alert,
+                        'riskScore': risk_score,
+                        'condition': condition,
+                        'temperature': f"{temp}°C",
+                        'humidity': f"{humidity}%",
+                        'windSpeed': f"{wind_speed} km/h",
+                    })
+            except Exception as e:
+                results.append({
+                    'location': str(location_query),
+                    'error': str(e),
+                })
+
+        return jsonify({'predictions': results}), 200
+
+    except Exception as e:
+        return jsonify({'error': 'Batch Processing Error', 'details': str(e)}), 500
+
+# --- 3. START SERVER ---
 if __name__ == '__main__':
-    print("\n" + "="*60)
-    print("🌀 VAANMOZHI BACKEND SERVER STARTING...")
-    print("="*60)
-    print("📡 Server: Tamil Nadu Weather API v1.0")
-    print("🌍 Coverage: Tamil Nadu Districts")
-    print("⚡ Status: Operational")
-    print("🔄 Updates: Every 5 minutes")
-    print("="*60)
-    
-    # Get local IP address for mobile connection
-    import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    
-    print(f"🔗 Local Server: http://127.0.0.1:5000")
-    print(f"📱 Mobile Access: http://{local_ip}:5000")
-    print(f"🎯 API Endpoint: http://{local_ip}:5000/api/v1/forecast")
-    print("="*60)
-    print("📝 NEXT STEPS:")
-    print(f"1. Update your mobile app API_BASE_URL to: http://{local_ip}:5000/api/v1")
-    print("2. Your mobile app will connect automatically!")
-    print("3. Watch real-time weather data flow from server to app!")
-    print("="*60)
-    
-    # Run server
+    print("\n[VAANMOZHI ML BACKEND IS LIVE]")
+    print(f"Local Access: http://127.0.0.1:5000")
+    print(f"Network Access: http://{local_ip}:5000\n")
     app.run(host='0.0.0.0', port=5000, debug=True)

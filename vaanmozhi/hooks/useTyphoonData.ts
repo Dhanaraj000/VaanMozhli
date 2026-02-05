@@ -1,13 +1,33 @@
 import { useEffect, useState } from 'react';
 
-export interface TyphoonForecast {
-  alertLevel: 'Low' | 'Moderate' | 'High' | 'Severe';
-  nextUpdate: string;
-  affectedDistricts: string[];
-  trackSummary: string;
+export interface AdditionalInfo {
+  temp: string;
+  humidity: string;
+  windSpeed: string;
+  precipitation?: string;
+  condition?: string;
+  dataConfidence: number;
+  lastModelRun: string;
 }
 
-export function useTyphoonData() {
+export interface LocationData {
+  latitude: number;
+  longitude: number;
+  name: string;
+}
+
+export interface TyphoonForecast {
+  alertLevel: 'Low' | 'Moderate' | 'High' | 'Severe';
+  affectedDistricts: string[];
+  trackSummary: string;
+  intensity: string;
+  timestamp: string;
+  nextUpdate?: string;
+  location?: LocationData;
+  additionalInfo: AdditionalInfo;
+}
+
+export function useTyphoonData(latitude?: number, longitude?: number, city?: string) {
   const [data, setData] = useState<TyphoonForecast | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +37,20 @@ export function useTyphoonData() {
       try {
         setIsLoading(true);
         
-        const API_URL = 'http://127.0.0.1:5000/api/v1/forecast';
+        let API_URL = 'http://127.0.0.1:5000/api/v1/forecast';
+        
+        // Add location parameters if provided
+        const params = new URLSearchParams();
+        if (latitude && longitude) {
+          params.append('lat', latitude.toString());
+          params.append('lon', longitude.toString());
+        } else if (city) {
+          params.append('city', city);
+        }
+        
+        if (params.toString()) {
+          API_URL += '?' + params.toString();
+        }
         
         console.log('🔄 Fetching from backend:', API_URL);
         
@@ -53,7 +86,7 @@ export function useTyphoonData() {
     const interval = setInterval(fetchRealData, 30000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [latitude, longitude, city]);
 
   return { data, isLoading, error };
 }

@@ -1,5 +1,6 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { TyphoonForecast, useTyphoonData } from '../../hooks/useTyphoonData';
+import { MapSection } from '../../components/map-section';
 
 // Main component
 export default function HomeScreen() {
@@ -111,6 +112,8 @@ export default function HomeScreen() {
       </View>
 
       {renderWeatherStatus()}
+
+      <MapSection />
 
       <View style={styles.infoGrid}>
         <View style={styles.infoCard}>
